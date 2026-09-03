@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Typecheck, lint, test, build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      # The app reads these at module load, so the build needs them present.
+      # Placeholder values are fine: nothing here contacts Neon. Real values
+      # live in Vercel, and RLS -- not secrecy -- is what protects the rows.
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_NEON_AUTH_URL: https://ci-placeholder.neonauth.example.com/neondb/auth
+          NEXT_PUBLIC_NEON_DATA_API_URL: https://ci-placeholder.apirest.example.com/neondb/rest/v1
+
+  rls:
+    name: Row Level Security (live database)
+    runs-on: ubuntu-latest
+    # Runs only when the repository has the test-account secrets configured.
+    # Without them the job is skipped rather than failed, so forks and clones
+    # still get a green CI run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check whether credentials are configured
+        id: creds
+        env:
+          A_EMAIL: ${{ secrets.RLS_A_EMAIL }}
+        run: |
+          if [ -n "$A_EMAIL" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::RLS job skipped - repository secrets not configured. See README."
+          fi
+
+      - name: Verify Row Level Security against the live database
+        if: steps.creds.outputs.configured == 'true'
+        env:
+          NEXT_PUBLIC_NEON_AUTH_URL: ${{ secrets.NEON_AUTH_URL }}
+          NEXT_PUBLIC_NEON_DATA_API_URL: ${{ secrets.NEON_DATA_API_URL }}
+          A_EMAIL: ${{ secrets.RLS_A_EMAIL }}
+          A_PASSWORD: ${{ secrets.RLS_A_PASSWORD }}
+          B_EMAIL: ${{ secrets.RLS_B_EMAIL }}
+          B_PASSWORD: ${{ secrets.RLS_B_PASSWORD }}
+        run: |
+          # The script reads .env.local for the URLs; synthesise one from secrets.
+          printf 'NEXT_PUBLIC_NEON_AUTH_URL=%s\nNEXT_PUBLIC_NEON_DATA_API_URL=%s\n' \
+            "$NEXT_PUBLIC_NEON_AUTH_URL" "$NEXT_PUBLIC_NEON_DATA_API_URL" > .env.local
+          npm run test:rls

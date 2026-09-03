@@ -1,5 +1,7 @@
 # Networking Tracker
 
+[![CI](https://github.com/vmilare/assign-1-secure-net-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/vmilare/assign-1-secure-net-tracker/actions/workflows/ci.yml)
+
 A private contact tracker for the people you want to stay connected with at Berkeley. Each user
 signs up, keeps their own list of contacts — name, company, role, where you met, notes, and a
 high/medium/low priority — and can create, view, edit, delete, sort, filter, and search them.
@@ -348,6 +350,33 @@ validation as local, so the security properties demonstrated above hold on the l
 only on a developer machine.
 
 ---
+
+## Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and pull request:
+
+| Job | Steps |
+|---|---|
+| **verify** | `npm ci` → typecheck → lint → 22 unit tests → production build |
+| **rls** | Runs `npm run test:rls` against the live database |
+
+The build step supplies placeholder `NEXT_PUBLIC_*` values. Nothing in the build contacts Neon, and
+these variables are public by design — real values live in Vercel, and RLS rather than secrecy is
+what protects the rows.
+
+The **rls** job needs two test accounts, so it skips itself with a notice unless these repository
+secrets exist (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `NEON_AUTH_URL` | your Neon Auth URL |
+| `NEON_DATA_API_URL` | your Neon Data API URL |
+| `RLS_A_EMAIL` / `RLS_A_PASSWORD` | first test account |
+| `RLS_B_EMAIL` / `RLS_B_PASSWORD` | second test account |
+
+Skipping rather than failing keeps CI green for anyone who clones the repo without those accounts.
+With them configured, every push re-proves that User B still cannot reach User A's rows — the
+security property is regression-tested rather than checked once by hand.
 
 ## Deployment
 
