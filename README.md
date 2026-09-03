@@ -60,6 +60,10 @@ by calling the public Data API directly.
 
 ## Architecture
 
+![Request flow](docs/architecture.svg)
+
+The same flow in text:
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │ Browser — React client components                            │
@@ -385,45 +389,45 @@ submit.
 
 ## Grading evidence
 
-_Replace each placeholder with your own screenshot or recording._
+| Requirement | Evidence | Status |
+|---|---|---|
+| Automated test passes | `npm test` — 22/22, output in [Testing](#testing) | **Done** |
+| **User A cannot access User B's contacts** | `npm run test:rls` — 7/7 against the live database, output in [Testing](#testing) | **Done** |
+| Deployed app works end to end | Production smoke test — 6/6, output in [Testing](#testing) | **Done** |
+| Schema and RLS ownership explained | [Authentication and RLS ownership](#authentication-and-rls-ownership) | **Done** |
+| No committed secret values | `.env.example` holds placeholders only; `.env.local` and `.rls-test.local` are git-ignored and absent from history | **Done** |
+| Sign-in and sign-out | `docs/screenshots/01-auth.png` | _to add_ |
+| Create, edit, delete, refresh a contact | `docs/screenshots/02-crud.png` | _to add_ |
+| Invalid input fails safely | `docs/screenshots/03-validation.png` | _to add_ |
+| Two-account privacy, visually | `docs/screenshots/04-user-b-empty.png` | _to add_ |
 
-| Requirement | Evidence |
-|---|---|
-| Automated test passes | **Done** — `npm test`, 22/22 (output above) |
-| Sign in and sign out | _<!-- TODO -->_ |
-| Create, edit, delete, refresh | _<!-- TODO -->_ |
-| Invalid input fails safely | **Verified in production** — blank name returns `400 {"name":"Name is required"}` (above). Screenshot of the UI state still to add. |
-| **User A cannot access User B's contacts** | **Done** — `npm run test:rls`, 7/7 passing (output above) |
+### Screenshots
 
-### Two-account privacy test
+<!--
+  Save each shot into docs/screenshots/ with the filename above, then replace
+  the matching line here with:   ![Sign in and sign out](docs/screenshots/01-auth.png)
+-->
 
-1. Sign in as **User A**, create a contact "Alice at Google". Copy its `id` from the network tab.
-2. Sign out. Sign in as **User B**. **B's list is empty** — screenshot this.
-3. As B, attack the *public* Data API directly, bypassing this app's backend entirely:
+**01-auth** — the sign-in form, and the signed-in header showing your email with the Sign out button.
 
-   ```bash
-   # Read A's rows
-   curl "$NEXT_PUBLIC_NEON_DATA_API_URL/contacts?select=*" \
-     -H "Authorization: Bearer $B_TOKEN"
-   # → []   (A's row is invisible, enforced by contacts_select_own)
+**02-crud** — a contact in the list after creating it, ideally with the edit form open, and the same
+list after a browser refresh to show persistence.
 
-   # Overwrite A's row
-   curl -X PATCH "$NEXT_PUBLIC_NEON_DATA_API_URL/contacts?id=eq.$ALICE_ID" \
-     -H "Authorization: Bearer $B_TOKEN" -H "Content-Type: application/json" \
-     -d '{"name":"hacked"}'
-   # → []   (no rows matched, enforced by contacts_update_own)
-   ```
+**03-validation** — the contact form with an empty name submitted, showing the inline
+"Name is required" error. This error comes from the server, not the browser.
 
-   To get `$B_TOKEN`: while signed in as B, open DevTools → Network, click any
-   `/api/contacts` request, and copy the value of its `Authorization` request header
-   (everything after `Bearer `).
+**04-user-b-empty** — the strongest visual: User A's list with contacts in it, beside User B's
+"No contacts yet." Same app, same database, different accounts.
 
-4. Sign back in as A: "Alice at Google" is untouched.
+### Reproducing the privacy test yourself
 
-This is the strong form of the test. It proves the *database* enforces ownership, not the route
-handlers — a test that only used the app's own UI could not distinguish the two.
+```bash
+# create .rls-test.local with two test accounts, then:
+npm run test:rls
+```
 
----
+The script signs in as both users and has B attempt to read, update, delete, and forge A's row
+**through the public Data API, bypassing this app's backend**. See [Testing](#testing) for output.
 
 ## Known limitations
 
