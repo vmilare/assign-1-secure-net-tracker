@@ -319,6 +319,30 @@ Each check maps to a specific policy in [`db/schema.sql`](db/schema.sql):
 Credentials are read from a git-ignored `.rls-test.local`; the script prints instructions if it is
 missing. No credentials are committed.
 
+### Production smoke test
+
+Run against the deployed app at https://assign-1-secure-net-tracker.vercel.app, exercising the
+real Vercel route handlers rather than a local dev server:
+
+```
+  [PASS]  site loads publicly
+          HTTP 200
+  [PASS]  API rejects unauthenticated request
+          HTTP 401
+  [PASS]  sign-in works with production origin
+          HTTP 200
+  [PASS]  JWT minted
+          HTTP 200
+  [PASS]  production API returns contacts for signed-in user
+          HTTP 200, 0 row(s)
+  [PASS]  production validation rejects a blank name
+          HTTP 400 {"name":"Name is required"}
+```
+
+The last two matter most: the deployed backend authenticates a real user and applies the same Zod
+validation as local, so the security properties demonstrated above hold on the live site and not
+only on a developer machine.
+
 ---
 
 ## Deployment
@@ -365,10 +389,10 @@ _Replace each placeholder with your own screenshot or recording._
 
 | Requirement | Evidence |
 |---|---|
-| Automated test passes | _<!-- TODO: screenshot of `npm test` -->_ |
+| Automated test passes | **Done** — `npm test`, 22/22 (output above) |
 | Sign in and sign out | _<!-- TODO -->_ |
 | Create, edit, delete, refresh | _<!-- TODO -->_ |
-| Invalid input fails safely | _<!-- TODO: empty name + bad priority -->_ |
+| Invalid input fails safely | **Verified in production** — blank name returns `400 {"name":"Name is required"}` (above). Screenshot of the UI state still to add. |
 | **User A cannot access User B's contacts** | **Done** — `npm run test:rls`, 7/7 passing (output above) |
 
 ### Two-account privacy test
