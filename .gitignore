@@ -45,3 +45,7 @@ next-env.d.ts
 
 # Local-only credentials for scripts/rls-test.mjs (never commit)
 .rls-test.local
+
+# Playwright browser binaries
+/test-results/
+/playwright-report/
