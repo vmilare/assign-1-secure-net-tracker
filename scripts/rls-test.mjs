@@ -35,7 +35,7 @@ const env = Object.fromEntries(
     .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1).trim()]),
 );
 
-const AUTH_URL = env.NEXT_PUBLIC_NEON_AUTH_URL;
+const AUTH_URL = (env.NEXT_PUBLIC_NEON_AUTH_URL ?? '').replace(/\/+$/, '');
 const DATA_URL = env.NEXT_PUBLIC_NEON_DATA_API_URL;
 
 if (!AUTH_URL || !DATA_URL) {
@@ -91,14 +91,51 @@ function loadCredentials() {
   return creds;
 }
 
+/**
+ * Sign in and return a JWT for the Data API.
+ *
+ * Does not use the SDK's getJWTToken(): on neon-js@0.7.0-beta that requests
+ * <authUrl>/api/auth/token (better-auth's default base path) and 404s against
+ * Neon's managed service, which serves <authUrl>/token. Same workaround as
+ * src/lib/neon-browser.ts.
+ *
+ * Cookies are handled by hand because Node's fetch has no cookie jar: the
+ * session cookie from sign-in must be replayed on the token request.
+ */
 async function tokenFor(email, password) {
-  const client = createClient({ auth: { url: AUTH_URL }, dataApi: { url: DATA_URL } });
-  const result = await client.auth.signIn.email({ email, password });
-  if (result?.error) {
-    throw new Error(`sign-in failed for ${email}: ${result.error.message ?? 'unknown error'}`);
+  const signIn = await fetch(`${AUTH_URL}/sign-in/email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+
+  if (!signIn.ok) {
+    let detail = `HTTP ${signIn.status}`;
+    try {
+      detail = (await signIn.json()).message ?? detail;
+    } catch {
+      /* keep the status */
+    }
+    throw new Error(`sign-in failed for ${email}: ${detail}`);
   }
-  const token = await client.auth.getJWTToken();
-  if (!token) throw new Error(`signed in as ${email} but no JWT was returned`);
+
+  // Collect every Set-Cookie and replay them as one Cookie header.
+  const setCookies = signIn.headers.getSetCookie?.() ?? [];
+  const cookie = setCookies.map((c) => c.split(';')[0]).join('; ');
+  if (!cookie) throw new Error(`signed in as ${email} but no session cookie was returned`);
+
+  const tokenResponse = await fetch(`${AUTH_URL}/token`, {
+    headers: { Accept: 'application/json', Cookie: cookie },
+  });
+  if (!tokenResponse.ok) {
+    throw new Error(`token request for ${email} failed: HTTP ${tokenResponse.status}`);
+  }
+
+  const payload = await tokenResponse.json();
+  const token = payload?.token ?? payload?.jwt ?? payload?.data?.token;
+  if (typeof token !== 'string' || token.length === 0) {
+    throw new Error(`token response for ${email} had no token field`);
+  }
   return token;
 }
 

@@ -264,12 +264,60 @@ The whitespace-name and client-`user_id` cases are the two that matter most: the
 an untrimmed `min(1)` would let through, and the second is the API-layer half of the ownership
 guarantee whose other half is the RLS `WITH CHECK`.
 
-_<!-- TODO: paste the output of `npm test` here -->_
-
 ```
  Test Files  1 passed (1)
       Tests  22 passed (22)
 ```
+
+### Live Row Level Security verification
+
+```bash
+npm run test:rls
+```
+
+A second suite, [`scripts/rls-test.mjs`](scripts/rls-test.mjs), runs against the **live database**.
+It signs in as two real users and has User B attack User A's row through the public Data API,
+bypassing the Next.js route handlers entirely. That distinction matters: a test driven through the
+app's own UI could not tell you whether ownership is enforced by Postgres or merely by careful
+application code. This one can.
+
+```
+=== Two-account Row Level Security verification ===
+Attacks run against the public Data API, bypassing the app backend.
+
+Authenticating both users...
+Both users authenticated.
+
+  [PASS]  A can create a contact
+          id 77aceaf9...
+  [PASS]  user_id stamped by the database, not the client
+          user_id was populated by DEFAULT auth.user_id()
+  [PASS]  B cannot READ A's contact
+          B sees 0 row(s) in total
+  [PASS]  B cannot UPDATE A's contact
+          0 row(s) affected
+  [PASS]  B cannot DELETE A's contact
+          0 row(s) affected
+  [PASS]  B cannot INSERT a row owned by A
+          rejected by policy
+  [PASS]  A's contact survived every attack
+          name unchanged, row present
+
+ALL CHECKS PASSED (7/7)
+```
+
+Each check maps to a specific policy in [`db/schema.sql`](db/schema.sql):
+
+| Check | Enforced by |
+|---|---|
+| `user_id` stamped by the database | `DEFAULT auth.user_id()` on the column |
+| B cannot READ A's contact | `contacts_select_own` |
+| B cannot UPDATE A's contact | `contacts_update_own` (`USING`) |
+| B cannot DELETE A's contact | `contacts_delete_own` |
+| B cannot INSERT a row owned by A | `contacts_insert_own` (`WITH CHECK`) |
+
+Credentials are read from a git-ignored `.rls-test.local`; the script prints instructions if it is
+missing. No credentials are committed.
 
 ---
 
@@ -295,7 +343,7 @@ _Replace each placeholder with your own screenshot or recording._
 | Sign in and sign out | _<!-- TODO -->_ |
 | Create, edit, delete, refresh | _<!-- TODO -->_ |
 | Invalid input fails safely | _<!-- TODO: empty name + bad priority -->_ |
-| **User A cannot access User B's contacts** | _<!-- TODO: see procedure below -->_ |
+| **User A cannot access User B's contacts** | **Done** — `npm run test:rls`, 7/7 passing (output above) |
 
 ### Two-account privacy test
 
@@ -329,10 +377,17 @@ handlers — a test that only used the app's own UI could not distinguish the tw
 
 ## Known limitations
 
-- **Beta SDK.** `@neondatabase/neon-js` is `0.7.0-beta`. `getJWTToken()` exists at runtime but is
-  absent from the published types, so `src/lib/neon-browser.ts` casts to reach it. The cast is
-  guarded by a runtime check that throws an actionable error if a future version renames it, rather
-  than silently returning `undefined`.
+- **Beta SDK, with a routing bug worked around.** `@neondatabase/neon-js` is `0.7.0-beta`, and its
+  `getJWTToken()` requests `<authUrl>/api/auth/token` — better-auth's default base path. Neon's
+  managed service serves that endpoint at `<authUrl>/token`, so the SDK call returns `404` and no
+  authenticated request can be made. Probing every candidate path confirmed only `/token` exists.
+  Both [`src/lib/neon-browser.ts`](src/lib/neon-browser.ts) and
+  [`scripts/rls-test.mjs`](scripts/rls-test.mjs) call that endpoint directly, keeping the SDK helper
+  as a fallback in case a later release fixes the path. Worth re-checking on the next version bump.
+- **Error surfacing.** An early version of `AuthForm` assumed the SDK returned `{ error }`; it
+  actually throws on non-2xx, so every real message ("email already exists", "password too short")
+  was being replaced with a generic connection error. Errors are now read from both shapes, and a
+  genuine network failure is distinguished by the absence of an HTTP status.
 - **No pagination.** Every contact is fetched on each load. Fine for a personal list of tens;
   keyset pagination on `(user_id, created_at)` would be the fix past a few hundred.
 - **No optimistic updates.** Mutations refetch the list, so there is a brief round-trip delay.
