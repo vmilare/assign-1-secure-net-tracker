@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Allow the placeholder template (required by the assignment); keep real secrets out.
+!.env.example
+
+# Local-only credentials for scripts/rls-test.mjs (never commit)
+.rls-test.local
