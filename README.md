@@ -7,7 +7,7 @@ Every row is owned by exactly one user and that ownership is enforced by Postgre
 Security, not by application code, so one user cannot read or modify another user's contacts even
 by calling the public Data API directly.
 
-> **Live app:** _<!-- TODO: paste your Vercel URL here after deploying -->_
+> **Live app:** **https://assign-1-secure-net-tracker.vercel.app**
 
 ---
 
@@ -323,13 +323,39 @@ missing. No credentials are committed.
 
 ## Deployment
 
+This project is deployed at
+**https://assign-1-secure-net-tracker.vercel.app**.
+
 1. Push to GitHub.
-2. Import the repository into Vercel (framework auto-detects as Next.js).
-3. Add all five environment variables under **Settings → Environment Variables** for Production.
-4. **Add your Vercel domain to Neon Auth's trusted origins.** Sign-in fails in production without
-   this — it is the most common deployment miss.
-5. Deploy, then open the public URL in a private window.
-6. Create two accounts and repeat the privacy test below against production.
+2. Deploy, either way:
+   - **Vercel CLI** — `vercel link`, then `vercel deploy --prod`. No GitHub connection needed.
+   - **Git integration** — import the repo at vercel.com for deploy-on-push. Requires a GitHub
+     login connection on the Vercel account (`vercel git connect` once that exists).
+3. Add the two public variables for Production:
+   ```bash
+   vercel env add NEXT_PUBLIC_NEON_AUTH_URL production --type config
+   vercel env add NEXT_PUBLIC_NEON_DATA_API_URL production --type config
+   ```
+   `--type config` is required: Vercel asks you to confirm explicitly that a `NEXT_PUBLIC_`
+   variable will be exposed to every visitor. Here that is intended — these are endpoints, not
+   credentials, and RLS is what protects the rows.
+4. **Add the deployed domain to Neon Auth's trusted origins** (Neon Console → Auth →
+   Configuration). Without it the site loads but every sign-in fails with
+   `403 INVALID_ORIGIN` — the app looks broken when the cause is one missing config entry.
+   Verify with:
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST "$NEXT_PUBLIC_NEON_AUTH_URL/sign-in/email" \
+     -H 'Content-Type: application/json' \
+     -H 'Origin: https://your-app.vercel.app' \
+     -d '{"email":"probe@example.invalid","password":"probe123"}'
+   # 401 = origin trusted (bad credentials, as expected).  403 = origin NOT trusted.
+   ```
+5. Open the public URL in a private window and repeat the two-account privacy test against
+   production.
+
+Note: Vercel's per-deployment URLs (`...-hash-team.vercel.app`) sit behind Deployment Protection
+and redirect to a login. The stable project alias above is the public one — that is the URL to
+submit.
 
 ---
 
