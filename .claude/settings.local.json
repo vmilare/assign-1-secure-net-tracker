@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(npm view *)",
+      "WebFetch(domain:neon.com)",
+      "WebSearch"
+    ]
+  }
+}
